@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Search Visualizer</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,"Segoe UI",Roboto,sans-serif;background:#0f172a;color:#e2e8f0}
+  header{padding:12px 20px;background:#111c33;border-bottom:1px solid #26344f;display:flex;flex-wrap:wrap;gap:12px 16px;align-items:center}
+  h1{font-size:18px;margin:0 6px 0 0;color:#7dd3fc;white-space:nowrap}
+  h2{font-size:16px;margin:0 0 6px;color:#f1f5f9}
+  label{font-size:13px;color:#94a3b8;display:inline-flex;align-items:center;gap:6px}
+  select,input[type=number]{background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:8px;padding:7px 9px;font-size:14px}
+  input[type=number]{width:64px}
+  button{background:#1e3a5f;color:#e2e8f0;border:1px solid #2f5185;border-radius:8px;padding:7px 13px;font-size:14px;cursor:pointer}
+  button:hover{background:#27508a}
+  button.primary{background:#0ea5e9;border-color:#38bdf8;color:#04121f;font-weight:600}
+  button.primary:hover{background:#38bdf8}
+  main{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,1fr);gap:16px;padding:16px 20px}
+  @media(max-width:1000px){main{grid-template-columns:1fr}}
+  .card{background:#1a2740;border:1px solid #26344f;border-radius:12px;padding:14px;margin-bottom:14px}
+  .card:last-child{margin-bottom:0}
+  canvas{width:100%;height:auto;display:block;border-radius:10px;background:#0b1220;cursor:crosshair}
+  .tools{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin-top:10px}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:10px;font-size:12px;color:#cbd5e1}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .sw{width:14px;height:14px;border-radius:3px;display:inline-block;border:1px solid rgba(255,255,255,.25)}
+  .ln{width:22px;height:0;border-top:3px dashed;display:inline-block}
+  #log{height:190px;overflow:auto;background:#0b1220;border:1px solid #26344f;border-radius:8px;padding:8px 10px;font:12px/1.5 ui-monospace,Consolas,monospace;color:#cbd5e1}
+  #log div{padding:1px 0}
+  #log .n{color:#64748b;margin-right:6px}
+  #log .end{color:#fde047;font-weight:600}
+  .idea{margin:0 0 10px;color:#cbd5e1;font-size:14px;line-height:1.5}
+  dl{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;margin:0;font-size:13px}
+  dt{color:#94a3b8}
+  dd{margin:0;color:#f1f5f9}
+  .note{margin-top:10px;padding:8px 10px;border-left:3px solid #38bdf8;background:#14213a;font-size:13px;color:#cbd5e1;border-radius:0 8px 8px 0}
+  .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .stat{background:#0f172a;border-radius:8px;padding:8px 10px}
+  .stat b{display:block;font-size:20px;color:#7dd3fc}
+  .stat small{color:#94a3b8;font-size:11px}
+  #result{margin-top:10px;font-size:13px;color:#e2e8f0}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{padding:5px 6px;text-align:left;border-bottom:1px solid #26344f}
+  th{color:#94a3b8;font-weight:600}
+  .ok{color:#4ade80}.bad{color:#f87171}
+  footer{padding:0 20px 20px;color:#64748b;font-size:12px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>AI Search Visualizer</h1>
+  <label>Algorithm <select id="algo"></select></label>
+  <label id="limitWrap" hidden>Depth limit <input id="limit" type="number" min="1" max="100" value="20"></label>
+  <button id="play" class="primary">&#9654; Play</button>
+  <button id="step">Step</button>
+  <button id="finish">&#9197; Finish</button>
+  <button id="reset">Reset search</button>
+  <label>Speed <input id="speed" type="range" min="1" max="10" value="5"></label>
+</header>
+
+<main>
+  <section>
+    <div class="card">
+      <canvas id="cv"></canvas>
+      <div class="legend" id="legend"></div>
+      <div class="tools">
+        <label>Brush
+          <select id="brush">
+            <option value="wall">Wall</option>
+            <option value="road">Road (cost 1)</option>
+            <option value="grass">Grass (cost 3)</option>
+            <option value="mud">Mud (cost 5)</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="showCosts"> Show g-values</label>
+        <label><input type="checkbox" id="showRoutes" checked> Show reference routes</label>
+        <button id="resetMaze">Reset maze</button>
+        <span style="font-size:12px;color:#64748b">Click or drag on the maze to edit it.</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Step-by-step log</h2>
+      <div id="log"></div>
+    </div>
+  </section>
+
+  <aside>
+    <div class="card" id="info"></div>
+    <div class="card">
+      <h2>Live statistics</h2>
+      <div class="stats">
+        <div class="stat"><b id="sStatus">ready</b><small>Status</small></div>
+        <div class="stat"><b id="sExp">0</b><small>Nodes expanded</small></div>
+        <div class="stat"><b id="sFront">0</b><small>Frontier size (max <span id="sMax">0</span>)</small></div>
+        <div class="stat"><b id="sSteps">-</b><small>Path length (steps)</small></div>
+        <div class="stat"><b id="sCost">-</b><small>Path cost</small></div>
+        <div class="stat"><b id="sBest">-</b><small>Best possible: cost / steps</small></div>
+      </div>
+      <div id="result"></div>
+    </div>
+    <div class="card">
+      <h2>Results of finished runs</h2>
+      <table>
+        <thead><tr><th>Algorithm</th><th>Expanded</th><th>Steps</th><th>Cost</th><th>Fewest steps?</th><th>Cheapest?</th></tr></thead>
+        <tbody id="resBody"><tr><td colspan="6" style="color:#64748b">Run an algorithm to compare it here.</td></tr></tbody>
+      </table>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  b = branching factor, d = depth of the shallowest solution, m = maximum depth, l = depth limit,
+  C* = optimal cost, &epsilon; = smallest step cost, V = cells, E = connections. Neighbour order in every algorithm: &darr; &rarr; &uarr; &larr;.
+</footer>
+
+<script>
+// =====================================================================
+//  CORE: maze, helpers, algorithms  (no DOM access in this part)
+// =====================================================================
+// Legend: # wall   . road (cost 1)   g grass (cost 3)   m mud (cost 5)   S start   E exit
+const MAP = [
+  "#####################",
+  "#...................#",
+  "#.###.###.###.###.#.#",
+  "#.#################.#",
+  "#.#################.#",
+  "#.#################.#",
+  "#S...mmmmmmmmmmm...E#",
+  "#.#.###############.#",
+  "#.#.###############.#",
+  "#....ggggggggggg....#",
+  "#.#.#.#.#.#.#.#.#.#.#",
+  "#####################"
+];
+const ROWS = MAP.length, COLS = MAP[0].length, N = ROWS * COLS;
+const DIRS = [[1,0],[0,1],[-1,0],[0,-1]];            // down, right, up, left
+const TERRAIN = {
+  '.': { name:'Road',  cost:1, color:'#cbd5e1' },
+  'g': { name:'Grass', cost:3, color:'#6fbf73' },
+  'm': { name:'Mud',   cost:5, color:'#9a6b43' },
+  '#': { name:'Wall',  cost:Infinity, color:'#0b1220' }
+};
+// Three reference routes for the default maze (corner points as [row, col])
+const ROUTE_DEFS = [
+  { name:'A', label:'short but muddy',   color:'#f43f5e', wps:[[6,1],[6,19]] },
+  { name:'B', label:'medium, grassy',    color:'#a855f7', wps:[[6,1],[9,1],[9,19],[6,19]] },
+  { name:'C', label:'long but all road', color:'#10b981', wps:[[6,1],[1,1],[1,19],[6,19]] }
+];
+
+let grid = [], START = 0, GOAL = 0;
+function loadMap() {
+  grid = [];
+  MAP.forEach((row, r) => [...row].forEach((ch, c) => {
+    const i = r * COLS + c;
+    if (ch === 'S') { START = i; ch = '.'; }
+    if (ch === 'E') { GOAL = i; ch = '.'; }
+    grid.push(ch);
+  }));
+}
+const cost  = i => TERRAIN[grid[i]].cost;
+const rowOf = i => Math.floor(i / COLS);
+const colOf = i => i % COLS;
+const nm    = i => `(${rowOf(i)},${colOf(i)})`;
+const h     = i => Math.abs(rowOf(i) - rowOf(GOAL)) + Math.abs(colOf(i) - colOf(GOAL));  // Manhattan distance
+
+function neighbors(i) {
+  const out = [], r = rowOf(i), c = colOf(i);
+  for (const [dr, dc] of DIRS) {
+    const nr = r + dr, nc = c + dc;
+    if (nr < 0 || nc < 0 || nr >= ROWS || nc >= COLS) continue;
+    const j = nr * COLS + nc;
+    if (grid[j] !== '#') out.push(j);
+  }
+  return out;
+}
+
+function newState() {
+  return {
+    visited: new Set(),     // expanded (closed) cells
+    frontier: new Set(),    // discovered but not yet expanded
+    current: -1,
+    parent: new Map(),
+    g: new Map(),           // best known path cost from the start
+    path: [], trail: [], pher: null,
+    expanded: 0, maxFrontier: 0, steps: 0,
+    found: false, done: false, status: 'ready', pathSteps: null, pathCost: null
+  };
+}
+function setPath(S, path) {
+  S.path = path; S.found = true; S.status = 'found';
+  S.pathSteps = path.length - 1;
+  S.pathCost = path.slice(1).reduce((s, n) => s + cost(n), 0);
+}
+function finish(S) {                       // rebuild the route from the parent links
+  const path = []; let c = GOAL;
+  while (c !== undefined && c !== -1) { path.push(c); if (c === START) break; c = S.parent.get(c); }
+  setPath(S, path.reverse());
+}
+function end(S, status) { if (status) S.status = status; S.done = true; }
+
+class Heap {                                // min-heap, ties broken first-in-first-out
+  constructor() { this.a = []; this.t = 0; }
+  get size() { return this.a.length; }
+  lt(x, y) { return x.p < y.p || (x.p === y.p && x.t < y.t); }
+  push(p, item) {
+    const a = this.a; a.push({ p, t: this.t++, item });
+    let i = a.length - 1;
+    while (i > 0) { const j = (i - 1) >> 1; if (this.lt(a[i], a[j])) { [a[i], a[j]] = [a[j], a[i]]; i = j; } else break; }
+  }
+  pop() {
+    const a = this.a, top = a[0], last = a.pop();
+    if (a.length) {
+      a[0] = last; let i = 0;
+      for (;;) {
+        const l = 2 * i + 1, r = l + 1; let m = i;
+        if (l < a.length && this.lt(a[l], a[m])) m = l;
+        if (r < a.length && this.lt(a[r], a[m])) m = r;
+        if (m === i) break;
+        [a[i], a[m]] = [a[m], a[i]]; i = m;
+      }
+    }
+    return top;
+  }
+}
+
+// ---------------- Uninformed search ----------------
+function* bfs(S) {
+  const q = [START], seen = new Set([START]);
+  S.frontier.add(START);
+  yield `Start: put ${nm(START)} in the FIFO queue.`;
+  while (q.length) {
+    const cur = q.shift();
+    S.frontier.delete(cur); S.visited.add(cur); S.current = cur; S.expanded++;
+    if (cur === GOAL) { finish(S); end(S); yield `Dequeued ${nm(cur)} - that is the exit! Fewest-step route: ${S.pathSteps} steps, cost ${S.pathCost}.`; return; }
+    const added = [];
+    for (const nb of neighbors(cur)) if (!seen.has(nb)) { seen.add(nb); S.parent.set(nb, cur); q.push(nb); S.frontier.add(nb); added.push(nm(nb)); }
+    yield `Dequeue ${nm(cur)} -> enqueue ${added.length ? added.join(', ') : 'nothing new'} (queue size ${q.length}).`;
+  }
+  end(S, 'no path'); yield 'Queue is empty - there is no path to the exit.';
+}
+
+function* dfs(S) {
+  const st = [{ n: START, p: -1 }];
+  S.frontier.add(START);
+  yield `Start: push ${nm(START)} on the LIFO stack.`;
+  while (st.length) {
+    const { n, p } = st.pop();
+    S.frontier.delete(n);
+    if (S.visited.has(n)) continue;           // stale duplicate on the stack
+    if (p >= 0) S.parent.set(n, p);
+    S.visited.add(n); S.current = n; S.expanded++;
+    if (n === GOAL) { finish(S); end(S); yield `Popped ${nm(n)} - that is the exit! Route found: ${S.pathSteps} steps, cost ${S.pathCost}.`; return; }
+    const nbs = neighbors(n).filter(x => !S.visited.has(x));
+    for (let k = nbs.length - 1; k >= 0; k--) { st.push({ n: nbs[k], p: n }); S.frontier.add(nbs[k]); }
+    yield nbs.length
+      ? `Pop ${nm(n)} -> push ${nbs.map(nm).join(', ')} (dives into ${nm(nbs[0])} first; stack size ${st.length}).`
+      : `Pop ${nm(n)} -> dead end, backtrack (stack size ${st.length}).`;
+  }
+  end(S, 'no path'); yield 'Stack is empty - there is no path to the exit.';
+}
+
+function* dls(S, opts) {
+  const L = opts.limit, best = new Map(); let cutoff = false;
+  const st = [{ n: START, p: -1, d: 0 }];
+  S.frontier.add(START);
+  yield `Start with depth limit l = ${L}.`;
+  while (st.length) {
+    const e = st.pop();
+    S.frontier.delete(e.n);
+    if (best.has(e.n) && best.get(e.n) <= e.d) continue;    // already expanded at same or smaller depth
+    best.set(e.n, e.d);
+    if (e.p >= 0) S.parent.set(e.n, e.p);
+    S.g.set(e.n, e.d);                                       // g-values show the depth in this algorithm
+    S.visited.add(e.n); S.current = e.n; S.expanded++;
+    if (e.n === GOAL) { finish(S); end(S); yield `Popped ${nm(e.n)} at depth ${e.d} - the exit! ${S.pathSteps} steps, cost ${S.pathCost}.`; return; }
+    if (e.d >= L) { cutoff = true; yield `${nm(e.n)} is at depth ${e.d} = limit ${L}: CUTOFF, not expanded further.`; continue; }
+    const nbs = neighbors(e.n).filter(x => !(best.has(x) && best.get(x) <= e.d + 1));
+    for (let k = nbs.length - 1; k >= 0; k--) { st.push({ n: nbs[k], p: e.n, d: e.d + 1 }); S.frontier.add(nbs[k]); }
+    yield `Pop ${nm(e.n)} (depth ${e.d}) -> push ${nbs.length ? nbs.map(nm).join(', ') : 'nothing'}.`;
+  }
+  if (cutoff) { end(S, 'cutoff'); yield `No solution within depth limit ${L} (cutoff). The exit is deeper - try a bigger limit.`; }
+  else        { end(S, 'no path'); yield 'Stack is empty - there is no path to the exit.'; }
+}
+
+// ---------------- Best-first family: UCS, Greedy, A*, Dijkstra ----------------
+function* bestFirst(S, cfg) {
+  const heap = new Heap();
+  S.g.set(START, 0);
+  heap.push(cfg.prio(0, START), { n: START });
+  S.frontier.add(START);
+  let goalSeen = false;
+  yield `Start: put ${nm(START)} in the priority queue (${cfg.label(0, START)}).`;
+  while (heap.size) {
+    const { p, item } = heap.pop(), cur = item.n;
+    if (S.visited.has(cur)) continue;                        // stale entry
+    S.frontier.delete(cur); S.visited.add(cur); S.current = cur; S.expanded++;
+    const g = S.g.get(cur);
+    if (cur === GOAL) {
+      if (!cfg.exhaustive) { finish(S); end(S); yield `Pop ${nm(cur)} - the exit! Route: ${S.pathSteps} steps, total cost ${S.pathCost}.`; return; }
+      if (!goalSeen) { goalSeen = true; yield `Exit ${nm(cur)} settled with distance ${g}. Dijkstra keeps going until every reachable cell has its final distance.`; }
+    }
+    const notes = [];
+    for (const nb of neighbors(cur)) {
+      if (S.visited.has(nb)) continue;
+      const ng = g + cost(nb);
+      if (cfg.greedy) {
+        if (S.g.has(nb)) continue;                            // greedy never revises a cell
+      } else if (S.g.has(nb) && ng >= S.g.get(nb)) continue;
+      const improved = S.g.has(nb);
+      S.g.set(nb, ng); S.parent.set(nb, cur); S.frontier.add(nb);
+      heap.push(cfg.prio(ng, nb), { n: nb });
+      notes.push(`${nm(nb)} [${cfg.label(ng, nb)}]${improved ? ' improved' : ''}`);
+    }
+    yield `Pop ${nm(cur)} (lowest ${cfg.key} = ${p}) -> ${notes.length ? 'queue ' + notes.join(', ') : 'nothing new to queue'}.`;
+  }
+  if (cfg.exhaustive && S.g.has(GOAL)) { finish(S); end(S); yield `All reachable cells are settled. Shortest distance to the exit = ${S.pathCost}; route has ${S.pathSteps} steps.`; return; }
+  end(S, 'no path'); yield 'Priority queue is empty - there is no path to the exit.';
+}
+const ucs      = S => bestFirst(S, { key:'g',  prio:(g, n) => g,        label:(g, n) => `g=${g}` });
+const dijkstra = S => bestFirst(S, { key:'distance', exhaustive:true, prio:(g, n) => g, label:(g, n) => `dist=${g}` });
+const greedy   = S => bestFirst(S, { key:'h',  greedy:true, prio:(g, n) => h(n), label:(g, n) => `h=${h(n)}` });
+const astar    = S => bestFirst(S, { key:'f',  prio:(g, n) => g + h(n), label:(g, n) => `g=${g}+h=${h(n)}=${g + h(n)}` });
+
+// ---------------- Registry (the dropdown is built from this) ----------------
+const ALGOS = {
+  bfs: { name:'Breadth-First Search (BFS)', group:'Uninformed search', run:bfs, info:{
+    idea:'Expands the shallowest unexpanded node first, level by level, like a ripple spreading out from the start.',
+    structure:'FIFO queue', time:'O(b^d)', space:'O(b^d)', complete:'Yes (finite b)',
+    optimal:'Yes for the fewest steps - only when every step costs the same',
+    note:'BFS ignores terrain cost, so it returns the route with the fewest cells even if it wades through mud.' } },
+  dfs: { name:'Depth-First Search (DFS)', group:'Uninformed search', run:dfs, info:{
+    idea:'Always expands the deepest node: follows one branch as far as it can, then backtracks to the last choice.',
+    structure:'LIFO stack', time:'O(b^m)', space:'O(b*m)', complete:'Only in finite spaces (with a visited set, as here)',
+    optimal:'No',
+    note:'Neighbour order is down, right, up, left, so DFS dives downward first and returns whatever route it stumbles on - not necessarily a good one.' } },
+  dls: { name:'Depth-Limited Search (DLS)', group:'Uninformed search', run:dls, info:{
+    idea:'DFS that refuses to go deeper than a limit l, which prevents endless descent into a long branch.',
+    structure:'LIFO stack + depth', time:'O(b^l)', space:'O(b*l)', complete:'No - fails (cutoff) if l < d',
+    optimal:'No',
+    note:'Try limit 15 (the nearest exit is 18 steps away, so you get a cutoff) and limit 20 (a route is found). Cells show their depth if "Show g-values" is on.' } },
+  ucs: { name:'Uniform-Cost Search (UCS)', group:'Uninformed search', run:ucs, info:{
+    idea:'Expands the node with the lowest path cost g(n) so far, so cheap roads are preferred over grass and mud.',
+    structure:'Priority queue ordered by g(n)', time:'O(b^(1+floor(C*/e)))', space:'O(b^(1+floor(C*/e)))', complete:'Yes (if every step cost >= e > 0)',
+    optimal:'Yes - cheapest total cost',
+    note:'Finds the cheapest route even though it is the longest one in steps. Turn on "Show g-values" to see the cost of reaching each cell.' } },
+  greedy: { name:'Greedy Best-First Search', group:'Informed search', run:greedy, info:{
+    idea:'Expands the node that looks closest to the exit, h(n) = Manhattan distance, and ignores the cost already paid.',
+    structure:'Priority queue ordered by h(n)', time:'O(b^m) worst case', space:'O(b^m) worst case', complete:'No in looping spaces (yes here, thanks to the visited set)',
+    optimal:'No',
+    note:'Very few expansions, but it walks straight toward the exit - right through the mud.' } },
+  astar: { name:'A* Search', group:'Informed search', run:astar, info:{
+    idea:'Combines both ideas: f(n) = g(n) + h(n), the cost so far plus the estimated cost remaining.',
+    structure:'Priority queue ordered by f(n)', time:'O(b^d) worst case (far less with a good heuristic)', space:'O(b^d)', complete:'Yes',
+    optimal:'Yes, if h(n) is admissible (never overestimates). Manhattan distance with minimum step cost 1 is admissible.',
+    note:'Finds the same cheapest route as UCS but usually expands fewer cells because h(n) steers it toward the exit.' } },
+  dijkstra: { name:"Dijkstra's Algorithm", group:'Informed search', run:dijkstra, info:{
+    idea:'Single-source shortest paths: settles cells in order of distance from the start and continues until all reachable cells have a final distance.',
+    structure:'Min-heap (priority queue) of distances', time:'O((V + E) log V)', space:'O(V)', complete:'Yes',
+    optimal:'Yes (non-negative weights)',
+    note:'Same ordering as UCS, but UCS stops when the exit is popped while Dijkstra fills the whole map. Turn on "Show g-values" to see the distance map.' } }
+};
+
+// ======================================================================
+// LOCAL & NATURE-INSPIRED ALGORITHMS (Hill Climbing, Genetic, Ant Colony) - disabled for now.
+// To enable them: delete the line "/* @@LOCAL_BEGIN" just below and the line
+// "@@LOCAL_END" + star-slash at the end of the block. They then appear in the dropdown automatically.
+// (Only // comments are used inside the block so that it can sit in a block comment.)
+// ======================================================================
+/* @@LOCAL_BEGIN
+
+// ---------------- Hill climbing (steepest ascent on h) ----------------
+function* hillClimbing(S) {
+  let cur = START;
+  S.visited.add(cur); S.trail = [cur]; S.current = cur;
+  yield `Start at ${nm(cur)} with h = ${h(cur)}. Always move to the neighbour with the lowest h.`;
+  for (;;) {
+    S.expanded++;
+    if (cur === GOAL) { setPath(S, S.trail.slice()); end(S); yield `Reached the exit in ${S.pathSteps} steps, cost ${S.pathCost}.`; return; }
+    let best = -1, bestH = h(cur);
+    for (const nb of neighbors(cur)) if (h(nb) < bestH) { best = nb; bestH = h(nb); }
+    if (best < 0) { end(S, 'stuck'); yield `STUCK at ${nm(cur)} (h = ${h(cur)}): no neighbour is better - a local optimum. Hill climbing never backtracks.`; return; }
+    cur = best; S.current = cur; S.visited.add(cur); S.trail.push(cur);
+    yield `Move to ${nm(cur)} (h = ${bestH}).`;
+  }
+}
+
+// ---------------- Genetic algorithm (chromosome = list of moves) ----------------
+function* genetic(S) {
+  const POP = 60, LEN = 45, GENS = 300, MUT = 0.06, ELITE = 2;
+  const rndGene = () => Math.floor(Math.random() * 4);
+  function walk(genes) {                           // run the moves; walls and borders block movement
+    let cur = START, minH = h(cur), reached = false;
+    const trail = [cur];
+    for (const gene of genes) {
+      const r = rowOf(cur) + DIRS[gene][0], c = colOf(cur) + DIRS[gene][1];
+      if (r < 0 || c < 0 || r >= ROWS || c >= COLS) continue;
+      const nx = r * COLS + c;
+      if (grid[nx] === '#') continue;
+      cur = nx; trail.push(cur); minH = Math.min(minH, h(cur));
+      if (cur === GOAL) { reached = true; break; }
+    }
+    const pc = trail.slice(1).reduce((s, n) => s + cost(n), 0);
+    const fit = reached ? 1000 - pc : -(minH + h(cur));
+    return { genes, trail, fit, reached };
+  }
+  const tournament = ev => { let b = ev[Math.floor(Math.random() * ev.length)];
+    for (let k = 0; k < 2; k++) { const c = ev[Math.floor(Math.random() * ev.length)]; if (c.fit > b.fit) b = c; } return b; };
+  let pop = Array.from({ length: POP }, () => Array.from({ length: LEN }, rndGene));
+  yield `Generation 0: ${POP} random chromosomes, each ${LEN} moves long. Fitness = closeness to the exit.`;
+  for (let gen = 1; gen <= GENS; gen++) {
+    const ev = pop.map(walk).sort((a, b) => b.fit - a.fit);
+    const best = ev[0];
+    S.trail = best.trail; S.current = best.trail[best.trail.length - 1]; S.expanded = gen * POP;
+    best.trail.forEach(n => S.visited.add(n));
+    if (best.reached) { setPath(S, best.trail); end(S); yield `Generation ${gen}: a chromosome reaches the exit! ${S.pathSteps} steps, cost ${S.pathCost}.`; return; }
+    if (gen === GENS) break;
+    const next = ev.slice(0, ELITE).map(e => e.genes.slice());
+    while (next.length < POP) {
+      const a = tournament(ev).genes, b = tournament(ev).genes, cut = 1 + Math.floor(Math.random() * (LEN - 1));
+      next.push(a.slice(0, cut).concat(b.slice(cut)).map(x => Math.random() < MUT ? rndGene() : x));
+    }
+    pop = next;
+    yield `Generation ${gen}: best fitness ${best.fit.toFixed(0)} (closest it got to the exit: ${-best.fit} cells away). Selection + crossover + mutation -> next generation.`;
+  }
+  end(S, 'no path'); yield `No chromosome reached the exit within ${GENS} generations.`;
+}
+
+// ---------------- Ant colony optimisation (pheromone on cells) ----------------
+function* antColony(S) {
+  const ANTS = 30, ITER = 40, ALPHA = 1, BETA = 2, RHO = 0.3, Q = 100, MAXSTEP = 150;
+  const ph = new Float32Array(N).fill(1);
+  S.pher = ph;
+  let bestPath = null, bestCost = Infinity;
+  yield `Start: ${ANTS} ants per iteration, evaporation rate ${RHO}. Ants prefer cells with more pheromone and cheaper terrain.`;
+  for (let it = 1; it <= ITER; it++) {
+    const done = []; let lost = 0;
+    for (let a = 0; a < ANTS; a++) {
+      let cur = START; const path = [cur], seen = new Set(path);
+      while (cur !== GOAL && path.length < MAXSTEP) {
+        const opts = neighbors(cur).filter(n => !seen.has(n));
+        if (!opts.length) break;
+        const w = opts.map(n => Math.pow(ph[n], ALPHA) * Math.pow(1 / cost(n), BETA));
+        let r = Math.random() * w.reduce((x, y) => x + y, 0), pick = opts[opts.length - 1];
+        for (let k = 0; k < opts.length; k++) { r -= w[k]; if (r <= 0) { pick = opts[k]; break; } }
+        cur = pick; path.push(cur); seen.add(cur);
+      }
+      if (cur === GOAL) done.push({ path, c: path.slice(1).reduce((s, n) => s + cost(n), 0) }); else lost++;
+    }
+    for (let i = 0; i < N; i++) ph[i] = Math.max(0.01, ph[i] * (1 - RHO));         // evaporation
+    for (const d of done) {                                                          // deposit
+      for (const n of d.path) ph[n] += Q / d.c;
+      if (d.c < bestCost) { bestCost = d.c; bestPath = d.path; }
+    }
+    S.expanded += ANTS; S.trail = bestPath || [];
+    if (bestPath) S.current = bestPath[bestPath.length - 1];
+    yield `Iteration ${it}: ${done.length}/${ANTS} ants reached the exit, ${lost} got lost. Best cost so far: ${bestPath ? bestCost : 'none yet'}.`;
+  }
+  if (bestPath) { setPath(S, bestPath); end(S); yield `Done. Best route found: ${S.pathSteps} steps, cost ${S.pathCost}. Brighter purple = more pheromone.`; }
+  else { end(S, 'no path'); yield 'No ant reached the exit.'; }
+}
+
+ALGOS.hill = { name:'Hill Climbing', group:'Local & nature-inspired', run:hillClimbing, info:{
+  idea:'Greedy local search: always step to the neighbour with the lowest h(n). It never backtracks and remembers nothing but where it is.',
+  structure:'None - keeps only the current cell', time:'O(m) moves, one neighbour scan each', space:'O(1)',
+  complete:'No - can get stuck at local optima or plateaus', optimal:'No',
+  note:'Paint a wall right in front of the straight route and watch it get stuck.' } };
+ALGOS.ga = { name:'Genetic Algorithm', group:'Local & nature-inspired', run:genetic, info:{
+  idea:'Evolves a population of move sequences using selection, crossover and mutation. Fitness = how close the walk gets to the exit.',
+  structure:'Population of chromosomes (lists of moves)', time:'O(generations x population x length)', space:'O(population x length)',
+  complete:'No (stochastic)', optimal:'No guarantee',
+  note:'The purple line is the best chromosome of the current generation. Results differ from run to run.' } };
+ALGOS.aco = { name:'Ant Colony Optimisation', group:'Local & nature-inspired', run:antColony, info:{
+  idea:'Artificial ants build routes at random, biased by pheromone and terrain cost. Good routes get more pheromone; pheromone evaporates over time.',
+  structure:'Pheromone value per cell', time:'O(iterations x ants x path length)', space:'O(V)',
+  complete:'Probabilistic', optimal:'No guarantee (converges toward good routes)',
+  note:'Purple glow = pheromone. The purple line is the best route found so far.' } };
+
+@@LOCAL_END */
+
+// Run an algorithm to the end without drawing (used for the "best possible" numbers)
+function solve(key, opts = {}) {
+  const S = newState(), g = ALGOS[key].run(S, opts);
+  let n = 0;
+  while (!g.next().done && n++ < 100000) { /* keep going */ }
+  return S;
+}
+
+// @@UI_BEGIN
+// =====================================================================
+//  UI: drawing, controls, log, statistics
+// =====================================================================
+const CELL = 36;
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+cv.width = COLS * CELL; cv.height = ROWS * CELL;
+const el = id => document.getElementById(id);
+const BRUSH = { wall:'#', road:'.', grass:'g', mud:'m' };
+const DELAYS = [900, 600, 380, 240, 150, 90, 50, 25, 10, 2];
+
+let S = newState(), gen = null, playing = false, timer = null, runKey = null;
+let OPT = { cost:null, steps:null }, routes = [];
+const results = {};
+
+function expandWaypoints(wps) {
+  const cells = [wps[0][0] * COLS + wps[0][1]];
+  for (let k = 1; k < wps.length; k++) {
+    let [r, c] = wps[k - 1]; const [tr, tc] = wps[k];
+    while (r !== tr || c !== tc) { r += Math.sign(tr - r); c += Math.sign(tc - c); cells.push(r * COLS + c); }
+  }
+  return cells;
+}
+function computeRoutes() {
+  routes = ROUTE_DEFS.map(d => {
+    const cells = expandWaypoints(d.wps);
+    const valid = cells.every(i => grid[i] !== '#') && cells[0] === START && cells[cells.length - 1] === GOAL;
+    return { ...d, cells, valid, steps: cells.length - 1, cost: cells.slice(1).reduce((s, n) => s + cost(n), 0) };
+  });
+}
+function computeOptima() {
+  const u = solve('ucs'), b = solve('bfs');
+  OPT = u.found ? { cost:u.pathCost, steps:b.pathSteps } : { cost:null, steps:null };
+}
+
+// ---------- drawing ----------
+function draw() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  for (let i = 0; i < N; i++) {
+    const x = colOf(i) * CELL, y = rowOf(i) * CELL;
+    ctx.fillStyle = TERRAIN[grid[i]].color; ctx.fillRect(x, y, CELL, CELL);
+    if (grid[i] !== '#') { ctx.strokeStyle = 'rgba(0,0,0,.14)'; ctx.strokeRect(x + .5, y + .5, CELL - 1, CELL - 1); }
+  }
+  if (S.pher) {
+    let mx = 1; for (let i = 0; i < N; i++) if (grid[i] !== '#' && S.pher[i] > mx) mx = S.pher[i];
+    for (let i = 0; i < N; i++) if (grid[i] !== '#') {
+      const a = Math.min(.85, (S.pher[i] - 1) / (mx - 1 + 1e-9));
+      if (a > 0.02) { ctx.fillStyle = `rgba(168,85,247,${a})`; ctx.fillRect(colOf(i) * CELL, rowOf(i) * CELL, CELL, CELL); }
+    }
+  }
+  const fill = (set, color) => { ctx.fillStyle = color; for (const i of set) ctx.fillRect(colOf(i) * CELL, rowOf(i) * CELL, CELL, CELL); };
+  fill(S.visited, 'rgba(56,189,248,.50)');
+  fill(S.frontier, 'rgba(249,115,22,.78)');
+  if (S.current >= 0) { ctx.fillStyle = 'rgba(239,68,68,.92)'; ctx.fillRect(colOf(S.current) * CELL, rowOf(S.current) * CELL, CELL, CELL); }
+
+  if (el('showCosts').checked) {
+    ctx.font = 'bold 11px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#04121f';
+    for (const [i, g] of S.g) ctx.fillText(g, colOf(i) * CELL + CELL / 2, rowOf(i) * CELL + CELL / 2);
+  }
+  if (el('showRoutes').checked) for (const r of routes) if (r.valid) line(r.cells, r.color, 3, [7, 6]);
+  if (S.trail.length > 1 && !S.found) line(S.trail, '#c084fc', 3, []);
+  if (S.found && S.path.length > 1) { line(S.path, '#0b1220', 10, []); line(S.path, '#facc15', 6, []); }
+
+  badge(START, '#22c55e', 'S'); badge(GOAL, '#ef4444', 'E');
+}
+function line(cells, color, w, dash) {
+  ctx.save(); ctx.beginPath();
+  cells.forEach((i, k) => { const x = colOf(i) * CELL + CELL / 2, y = rowOf(i) * CELL + CELL / 2; k ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  ctx.strokeStyle = color; ctx.lineWidth = w; ctx.setLineDash(dash); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke(); ctx.restore();
+}
+function badge(i, color, text) {
+  const x = colOf(i) * CELL + CELL / 2, y = rowOf(i) * CELL + CELL / 2;
+  ctx.beginPath(); ctx.arc(x, y, CELL * .38, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 15px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x, y + 1);
+}
+
+// ---------- legend, info, stats ----------
+function renderLegend() {
+  const sw = (c, t) => `<span><i class="sw" style="background:${c}"></i>${t}</span>`;
+  let html = sw(TERRAIN['.'].color, 'Road (1)') + sw(TERRAIN.g.color, 'Grass (3)') + sw(TERRAIN.m.color, 'Mud (5)') +
+             sw('#0b1220', 'Wall') + sw('#22c55e', 'Start') + sw('#ef4444', 'Exit') +
+             sw('rgba(249,115,22,.9)', 'Frontier') + sw('rgba(56,189,248,.7)', 'Explored') + sw('#facc15', 'Final path');
+  routes.filter(r => r.valid).forEach(r => {
+    html += `<span><i class="ln" style="border-color:${r.color}"></i>Route ${r.name} (${r.label}): ${r.steps} steps, cost ${r.cost}</span>`;
+  });
+  el('legend').innerHTML = html;
+}
+function renderInfo() {
+  const a = ALGOS[el('algo').value], i = a.info;
+  el('info').innerHTML = `<h2>${a.name}</h2><p class="idea">${i.idea}</p><dl>
+    <dt>Data structure</dt><dd>${i.structure}</dd>
+    <dt>Time complexity</dt><dd>${i.time}</dd>
+    <dt>Space complexity</dt><dd>${i.space}</dd>
+    <dt>Complete?</dt><dd>${i.complete}</dd>
+    <dt>Optimal?</dt><dd>${i.optimal}</dd></dl>
+    <div class="note">${i.note}</div>`;
+  el('limitWrap').hidden = el('algo').value !== 'dls';
+}
+function renderStats() {
+  el('sStatus').textContent = S.status;
+  el('sExp').textContent = S.expanded;
+  el('sFront').textContent = S.frontier.size;
+  el('sMax').textContent = S.maxFrontier;
+  el('sSteps').textContent = S.found ? S.pathSteps : '-';
+  el('sCost').textContent = S.found ? S.pathCost : '-';
+  el('sBest').textContent = OPT.cost === null ? '-' : `${OPT.cost} / ${OPT.steps}`;
+}
+function renderResults() {
+  const rows = Object.keys(ALGOS).filter(k => results[k]).map(k => {
+    const r = results[k], mark = ok => ok ? '<span class="ok">yes</span>' : '<span class="bad">no</span>';
+    return `<tr><td>${ALGOS[k].name}</td><td>${r.expanded}</td><td>${r.found ? r.steps : '-'}</td><td>${r.found ? r.cost : '-'}</td>
+            <td>${r.found ? mark(r.steps === OPT.steps) : '-'}</td><td>${r.found ? mark(r.cost === OPT.cost) : '-'}</td></tr>`;
+  });
+  el('resBody').innerHTML = rows.length ? rows.join('') : '<tr><td colspan="6" style="color:#64748b">Run an algorithm to compare it here.</td></tr>';
+}
+function addLog(msg, cls) {
+  const d = document.createElement('div');
+  d.innerHTML = `<span class="n">${cls === 'end' ? '*' : S.steps}</span>` + msg.replace(/</g, '&lt;');
+  if (cls) d.className = cls;
+  const box = el('log'); box.appendChild(d);
+  while (box.childElementCount > 500) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
+}
+
+// ---------- running ----------
+function resetSearch() {
+  stopPlay(); S = newState(); gen = null;
+  el('log').innerHTML = ''; el('result').textContent = '';
+  draw(); renderStats();
+}
+function endRun() {
+  stopPlay();
+  results[runKey] = { expanded:S.expanded, found:S.found, steps:S.pathSteps, cost:S.pathCost };
+  let msg;
+  if (S.found) {
+    const extra = S.pathCost - OPT.cost;
+    msg = `<b>Route found:</b> ${S.pathSteps} steps, cost ${S.pathCost}. ` +
+      (S.pathCost === OPT.cost ? '<span class="ok">This is the cheapest possible route.</span>'
+        : `<span class="bad">Not the cheapest - ${extra} more than the best cost ${OPT.cost}.</span>`) +
+      (S.pathSteps === OPT.steps ? ' <span class="ok">It also has the fewest steps.</span>' : ` Fewest possible steps: ${OPT.steps}.`);
+  } else {
+    msg = `<b>No route found</b> (${S.status}).`;
+  }
+  el('result').innerHTML = msg;
+  addLog(S.found ? `Finished: ${S.expanded} nodes expanded, ${S.pathSteps} steps, cost ${S.pathCost}.` : `Finished without a route (${S.status}).`, 'end');
+  renderResults(); draw(); renderStats();
+}
+function doStep() {
+  if (S.done) return false;
+  if (!gen) {
+    runKey = el('algo').value; S = newState(); S.status = 'running';
+    el('log').innerHTML = ''; el('result').textContent = '';
+    gen = ALGOS[runKey].run(S, { limit: parseInt(el('limit').value, 10) || 20 });
+  }
+  const r = gen.next();
+  if (r.done) { end(S, S.found ? 'found' : (S.status === 'running' ? 'no path' : S.status)); endRun(); return false; }
+  S.steps++; S.maxFrontier = Math.max(S.maxFrontier, S.frontier.size);
+  addLog(r.value); draw(); renderStats();
+  if (S.done) { endRun(); return false; }
+  return true;
+}
+function tick() {
+  if (!playing) return;
+  const speed = +el('speed').value, burst = speed >= 9 ? 4 : 1;
+  let more = true;
+  for (let k = 0; k < burst && more; k++) more = doStep();
+  if (more) timer = setTimeout(tick, DELAYS[speed - 1]); else stopPlay();
+}
+function startPlay() { if (S.done) resetSearch(); playing = true; el('play').innerHTML = '&#9208; Pause'; tick(); }
+function stopPlay() { playing = false; clearTimeout(timer); el('play').innerHTML = '&#9654; Play'; }
+
+// ---------- maze editing ----------
+function mazeChanged() {
+  resetSearch(); computeOptima(); computeRoutes(); renderLegend();
+  for (const k in results) delete results[k];
+  renderResults(); renderStats();
+}
+let painting = false;
+function cellAt(e) {
+  const rc = cv.getBoundingClientRect();
+  const c = Math.floor((e.clientX - rc.left) * cv.width / rc.width / CELL);
+  const r = Math.floor((e.clientY - rc.top) * cv.height / rc.height / CELL);
+  return (r < 0 || c < 0 || r >= ROWS || c >= COLS) ? -1 : r * COLS + c;
+}
+function paint(e) {
+  const i = cellAt(e); if (i < 0 || i === START || i === GOAL) return;
+  const ch = BRUSH[el('brush').value]; if (grid[i] === ch) return;
+  grid[i] = ch; mazeChanged();
+}
+cv.addEventListener('mousedown', e => { painting = true; paint(e); });
+cv.addEventListener('mousemove', e => { if (painting) paint(e); });
+window.addEventListener('mouseup', () => painting = false);
+
+// ---------- wiring ----------
+function buildDropdown() {
+  const sel = el('algo'), groups = {};
+  Object.keys(ALGOS).forEach(k => {
+    const g = ALGOS[k].group;
+    if (!groups[g]) { groups[g] = document.createElement('optgroup'); groups[g].label = g; sel.appendChild(groups[g]); }
+    const o = document.createElement('option'); o.value = k; o.textContent = ALGOS[k].name; groups[g].appendChild(o);
+  });
+}
+el('algo').addEventListener('change', () => { resetSearch(); renderInfo(); });
+el('play').addEventListener('click', () => playing ? stopPlay() : startPlay());
+el('step').addEventListener('click', () => { stopPlay(); if (S.done) resetSearch(); doStep(); });
+el('finish').addEventListener('click', () => { stopPlay(); if (S.done) resetSearch(); let n = 0; while (doStep() && n++ < 100000) { /* run to the end */ } });
+el('reset').addEventListener('click', resetSearch);
+el('resetMaze').addEventListener('click', () => { loadMap(); mazeChanged(); });
+el('showCosts').addEventListener('change', draw);
+el('showRoutes').addEventListener('change', draw);
+el('limit').addEventListener('change', resetSearch);
+
+loadMap(); buildDropdown(); computeOptima(); computeRoutes(); renderLegend(); renderInfo(); renderStats(); draw();
+</script>
+</body>
+</html>
