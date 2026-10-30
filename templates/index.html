@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Search Visualizer</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header>
+  <h1>AI Search Visualizer</h1>
+  <label>Algorithm <select id="algo"></select></label>
+  <label id="limitWrap" hidden>Depth limit <input id="limit" type="number" min="1" max="100" value="20"></label>
+  <button id="play" class="primary">&#9654; Play</button>
+  <button id="step">Step</button>
+  <button id="finish">&#9197; Finish</button>
+  <button id="reset">Reset search</button>
+  <label>Speed <input id="speed" type="range" min="1" max="10" value="5"></label>
+</header>
+
+<main>
+  <section>
+    <div class="card">
+      <canvas id="cv"></canvas>
+      <div class="legend" id="legend"></div>
+      <div class="tools">
+        <label>Brush
+          <select id="brush">
+            <option value="wall">Wall</option>
+            <option value="road">Road (cost 1)</option>
+            <option value="grass">Grass (cost 3)</option>
+            <option value="mud">Mud (cost 5)</option>
+          </select>
+        </label>
+        <label><input type="checkbox" id="showCosts"> Show g-values</label>
+        <label><input type="checkbox" id="showRoutes" checked> Show reference routes</label>
+        <button id="resetMaze">Reset maze</button>
+        <span class="hint">Click or drag on the maze to edit it.</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Step-by-step log</h2>
+      <div id="log"></div>
+    </div>
+  </section>
+
+  <aside>
+    <div class="card" id="info"></div>
+    <div class="card">
+      <h2>Live statistics</h2>
+      <div class="stats">
+        <div class="stat"><b id="sStatus">ready</b><small>Status</small></div>
+        <div class="stat"><b id="sExp">0</b><small>Nodes expanded</small></div>
+        <div class="stat"><b id="sFront">0</b><small>Frontier size (max <span id="sMax">0</span>)</small></div>
+        <div class="stat"><b id="sSteps">-</b><small>Path length (steps)</small></div>
+        <div class="stat"><b id="sCost">-</b><small>Path cost</small></div>
+        <div class="stat"><b id="sBest">-</b><small>Best possible: cost / steps</small></div>
+      </div>
+      <div id="result"></div>
+    </div>
+    <div class="card">
+      <h2>Results of finished runs</h2>
+      <table>
+        <thead><tr><th>Algorithm</th><th>Expanded</th><th>Steps</th><th>Cost</th><th>Fewest steps?</th><th>Cheapest?</th></tr></thead>
+        <tbody id="resBody"><tr><td colspan="6" class="hint">Run an algorithm to compare it here.</td></tr></tbody>
+      </table>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  b = branching factor, d = depth of the shallowest solution, m = maximum depth, l = depth limit,
+  C* = optimal cost, &epsilon; = smallest step cost, V = cells, E = connections. Neighbour order in every algorithm: &darr; &rarr; &uarr; &larr;.
+  The algorithms run in Python (Flask); this page replays their steps.
+</footer>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
